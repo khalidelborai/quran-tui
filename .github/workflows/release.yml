@@ -1,0 +1,124 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-package:
+    name: Build package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Show Rust toolchain
+        run: |
+          rustup --version
+          cargo --version
+          rustc --version
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Cache target directory
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: release-${{ runner.os }}-target-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Compute release metadata
+        id: meta
+        run: python scripts/release-metadata.py
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Package release (Unix)
+        if: runner.os != 'Windows'
+        env:
+          RELEASE_VERSION: ${{ steps.meta.outputs.version }}
+          RELEASE_PLATFORM: ${{ steps.meta.outputs.platform }}
+        run: |
+          chmod +x scripts/package-release.sh
+          ./scripts/package-release.sh "$RELEASE_VERSION" "$RELEASE_PLATFORM"
+
+      - name: Validate package contents (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          archive=$(find dist -maxdepth 1 -type f -name '*.tar.gz' | head -n 1)
+          test -n "$archive"
+          tar -tzf "$archive" | grep -E '/(quran-tui|run-quran-tui\.sh|README\.md|SETUP\.md)$'
+
+      - name: Package release (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.meta.outputs.version }}
+          RELEASE_PLATFORM: ${{ steps.meta.outputs.platform }}
+        run: ./scripts/package-release.ps1 -Version $env:RELEASE_VERSION -Platform $env:RELEASE_PLATFORM -ProjectRoot .
+
+      - name: Validate package contents (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $archive = Get-ChildItem dist/*.zip | Select-Object -First 1
+          if (-not $archive) { throw 'No zip archive produced' }
+          $verifyDir = Join-Path $PWD 'dist-verify'
+          if (Test-Path $verifyDir) { Remove-Item $verifyDir -Recurse -Force }
+          Expand-Archive -Path $archive.FullName -DestinationPath $verifyDir
+          $root = Get-ChildItem $verifyDir | Select-Object -First 1
+          if (-not (Test-Path (Join-Path $root.FullName 'quran-tui.exe'))) { throw 'Missing quran-tui.exe' }
+          if (-not (Test-Path (Join-Path $root.FullName 'run-quran-tui.cmd'))) { throw 'Missing run-quran-tui.cmd' }
+          if (-not (Test-Path (Join-Path $root.FullName 'README.md'))) { throw 'Missing README.md' }
+          if (-not (Test-Path (Join-Path $root.FullName 'SETUP.md'))) { throw 'Missing SETUP.md' }
+          Remove-Item $verifyDir -Recurse -Force
+
+      - name: Upload packaged artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: quran-tui-${{ steps.meta.outputs.platform }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+
+  publish-release:
+    name: Publish GitHub release
+    if: github.ref_type == 'tag'
+    needs: build-package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: release-artifacts
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s globstar nullglob
+          assets=(release-artifacts/**/*)
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes
+          fi
