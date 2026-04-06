@@ -65,3 +65,19 @@ jobs:
 
       - name: Release build
         run: cargo build --release
+
+      - name: Install cargo-deb
+        if: runner.os == 'Linux'
+        run: cargo install cargo-deb --version 3.6.3 --locked
+
+      - name: Package Debian release
+        if: runner.os == 'Linux'
+        run: ./scripts/package-deb.sh 0.1.0+ci
+
+      - name: Validate Debian package
+        if: runner.os == 'Linux'
+        run: |
+          deb=$(find dist -maxdepth 1 -type f -name '*.deb' | head -n 1)
+          test -n "$deb"
+          dpkg-deb -c "$deb" | grep -E './usr/bin/quran-tui$'
+          dpkg-deb -f "$deb" Depends | grep -F 'mpv'

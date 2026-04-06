@@ -58,12 +58,30 @@ jobs:
           chmod +x scripts/package-release.sh
           ./scripts/package-release.sh "$RELEASE_VERSION" "$RELEASE_PLATFORM"
 
+      - name: Install cargo-deb
+        if: runner.os == 'Linux'
+        run: cargo install cargo-deb --version 3.6.3 --locked
+
+      - name: Package Debian release
+        if: runner.os == 'Linux'
+        env:
+          RELEASE_VERSION: ${{ steps.meta.outputs.version }}
+        run: ./scripts/package-deb.sh "$RELEASE_VERSION"
+
       - name: Validate package contents (Unix)
         if: runner.os != 'Windows'
         run: |
           archive=$(find dist -maxdepth 1 -type f -name '*.tar.gz' | head -n 1)
           test -n "$archive"
           tar -tzf "$archive" | grep -E '/(quran-tui|run-quran-tui\.sh|README\.md|SETUP\.md)$'
+
+      - name: Validate Debian package
+        if: runner.os == 'Linux'
+        run: |
+          deb=$(find dist -maxdepth 1 -type f -name '*.deb' | head -n 1)
+          test -n "$deb"
+          dpkg-deb -c "$deb" | grep -E './usr/bin/quran-tui$'
+          dpkg-deb -f "$deb" Depends | grep -F 'mpv'
 
       - name: Package release (Windows)
         if: runner.os == 'Windows'
@@ -96,6 +114,7 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*.zip
+            dist/*.deb
 
   publish-release:
     name: Publish GitHub release
@@ -114,7 +133,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          mapfile -d '' -t assets < <(find release-artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print0 | sort -z)
+          mapfile -d '' -t assets < <(find release-artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.deb' \) -print0 | sort -z)
           if ((${#assets[@]} == 0)); then
             echo "No release archives were downloaded" >&2
             exit 1

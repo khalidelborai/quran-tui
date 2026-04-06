@@ -2,6 +2,10 @@
 name = "quran-tui"
 version = "0.1.0"
 edition = "2024"
+description = "Terminal Quran player and study app"
+readme = "README.md"
+repository = "https://github.com/khalidelborai/quran-tui"
+homepage = "https://github.com/khalidelborai/quran-tui"
 
 [dependencies]
 arabic_reshaper = "0.4.2"
@@ -15,3 +19,15 @@ tokio = { version = "1.51.0", features = ["macros", "net", "rt-multi-thread"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["fmt", "env-filter"] }
 unicode-bidi = "0.3.18"
+
+[package.metadata.deb]
+maintainer = "quran-tui maintainers"
+depends = "$auto, mpv"
+section = "utils"
+priority = "optional"
+extended-description = "Terminal Quran player and study app with browse, playback, downloads, and study mode."
+assets = [
+  ["target/release/quran-tui", "usr/bin/quran-tui", "755"],
+  ["README.md", "usr/share/doc/quran-tui/README.md", "644"],
+  ["SETUP.md", "usr/share/doc/quran-tui/SETUP.md", "644"],
+]

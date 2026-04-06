@@ -36,7 +36,8 @@ Practical advice:
 ## CI and releases
 
 - Pull requests and pushes to `main` run GitHub Actions CI on Linux, macOS, and Windows.
-- Tags matching `v*` build release binaries and upload packaged archives to GitHub Releases.
+- Tags matching `v*` build release binaries and upload packaged assets to GitHub Releases.
+- Linux releases include both a `.tar.gz` archive and a native `.deb` package.
 - Release archives include the binary, a helper launcher script, `README.md`, and `SETUP.md`.
 - Release archive names use normalized Rust host triples such as `linux-x86_64`, `macos-aarch64`, or `windows-x86_64`.
 - Runtime dependencies such as `mpv` and Arabic fonts are **not** bundled; install them separately.
