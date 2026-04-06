@@ -1,12 +1,21 @@
-use std::io::{self, BufRead, Write as IoWrite};
+use std::io;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::Duration;
 
+#[cfg(windows)]
+use std::future::Future;
+#[cfg(unix)]
+use std::io::{BufRead, Read, Write as IoWrite};
+#[cfg(windows)]
+use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
 use tracing::{debug, info, warn};
 
-use crate::config::runtime_path;
+use crate::config::mpv_ipc_endpoint;
+
+#[cfg(windows)]
+const ERROR_PIPE_BUSY_OS_CODE: i32 = 231;
 
 pub(crate) struct MpvPlayer {
     backend: Backend,
@@ -260,7 +269,7 @@ mod tests {
     fn start_reports_missing_binary() {
         let mut player = MpvPlayer::with_command("definitely-not-a-real-mpv-binary");
         let error = player.start().expect_err("missing binary should fail");
-        assert!(error.contains("Failed to start"));
+        assert!(error.contains("definitely-not-a-real-mpv-binary"));
         assert_eq!(player.startup_error(), Some(error.as_str()));
     }
 
@@ -327,7 +336,7 @@ impl Backend {
 
 struct RealBackend {
     process: Option<Child>,
-    socket_path: String,
+    ipc_endpoint: String,
     command: String,
 }
 
@@ -335,7 +344,7 @@ impl RealBackend {
     fn new() -> Self {
         Self {
             process: None,
-            socket_path: runtime_path("mpv.sock").display().to_string(),
+            ipc_endpoint: mpv_ipc_endpoint(),
             command: "mpv".to_string(),
         }
     }
@@ -348,10 +357,9 @@ impl RealBackend {
         }
     }
 
-    #[cfg(unix)]
     fn start(&mut self) -> Result<(), String> {
-        info!(socket = %self.socket_path, command = %self.command, "Starting mpv");
-        let _ = std::fs::remove_file(&self.socket_path);
+        info!(endpoint = %self.ipc_endpoint, command = %self.command, "Starting mpv");
+        self.cleanup_endpoint();
 
         let child = Command::new(&self.command)
             .args([
@@ -359,7 +367,7 @@ impl RealBackend {
                 "--no-video",
                 "--no-terminal",
                 "--really-quiet",
-                &format!("--input-ipc-server={}", self.socket_path),
+                &format!("--input-ipc-server={}", self.ipc_endpoint),
             ])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -370,15 +378,18 @@ impl RealBackend {
             Ok(child) => {
                 self.process = Some(child);
                 for _ in 0..20 {
-                    if Path::new(&self.socket_path).exists() {
-                        info!(socket = %self.socket_path, "mpv started");
+                    if self.endpoint_ready() {
+                        info!(endpoint = %self.ipc_endpoint, "mpv started");
                         return Ok(());
                     }
                     thread::sleep(Duration::from_millis(100));
                 }
 
-                let message = format!("{} started but IPC socket never became ready", self.command);
-                warn!(socket = %self.socket_path, error = %message, "mpv IPC startup failed");
+                let message = format!(
+                    "{} started but IPC endpoint never became ready",
+                    self.command
+                );
+                warn!(endpoint = %self.ipc_endpoint, error = %message, "mpv IPC startup failed");
                 self.cleanup();
                 Err(message)
             }
@@ -390,17 +401,6 @@ impl RealBackend {
         }
     }
 
-    #[cfg(not(unix))]
-    fn start(&mut self) -> Result<(), String> {
-        let message = format!(
-            "{} IPC control is currently supported only on Unix-like platforms",
-            self.command
-        );
-        warn!(error = %message, "mpv backend unsupported on this platform");
-        self.cleanup();
-        Err(message)
-    }
-
     fn is_available(&self) -> bool {
         self.process.is_some()
     }
@@ -410,30 +410,38 @@ impl RealBackend {
             let _ = child.kill();
             let _ = child.wait();
         }
-        let _ = std::fs::remove_file(&self.socket_path);
+        self.cleanup_endpoint();
     }
 
     #[cfg(unix)]
-    fn send_command(&self, cmd: &serde_json::Value) -> Option<serde_json::Value> {
-        use std::os::unix::net::UnixStream;
+    fn endpoint_ready(&self) -> bool {
+        Path::new(&self.ipc_endpoint).exists()
+    }
 
-        debug!(cmd = %cmd, "mpv IPC command");
-        let mut stream = match UnixStream::connect(&self.socket_path) {
-            Ok(stream) => stream,
-            Err(error) => {
-                warn!(socket = %self.socket_path, error = %error, "mpv IPC connection failed");
-                return None;
-            }
-        };
+    #[cfg(windows)]
+    fn endpoint_ready(&self) -> bool {
+        match self.try_connect_stream_once() {
+            Ok(_) => true,
+            Err(error) => self.is_retryable_pipe_connect(&error),
+        }
+    }
 
-        stream
-            .set_read_timeout(Some(Duration::from_millis(500)))
-            .ok()?;
+    #[cfg(unix)]
+    fn cleanup_endpoint(&self) {
+        let _ = std::fs::remove_file(&self.ipc_endpoint);
+    }
 
+    #[cfg(windows)]
+    fn cleanup_endpoint(&self) {}
+
+    fn read_response<T>(&self, mut stream: T, cmd: &serde_json::Value) -> Option<serde_json::Value>
+    where
+        T: Read + IoWrite,
+    {
         let message = format!("{cmd}\n");
         stream.write_all(message.as_bytes()).ok()?;
 
-        let mut reader = io::BufReader::new(&stream);
+        let mut reader = io::BufReader::new(stream);
         let mut response = String::new();
         reader.read_line(&mut response).ok()?;
 
@@ -442,10 +450,150 @@ impl RealBackend {
         parsed
     }
 
-    #[cfg(not(unix))]
+    #[cfg(unix)]
+    fn connect_stream(&self) -> io::Result<std::os::unix::net::UnixStream> {
+        std::os::unix::net::UnixStream::connect(&self.ipc_endpoint)
+    }
+
+    #[cfg(windows)]
+    fn with_runtime_io<F, T>(&self, future: F) -> io::Result<T>
+    where
+        F: Future<Output = io::Result<T>>,
+    {
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            tokio::task::block_in_place(|| handle.block_on(future))
+        } else {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_io()
+                .build()?
+                .block_on(future)
+        }
+    }
+
+    #[cfg(windows)]
+    fn try_connect_stream_once(&self) -> io::Result<NamedPipeClient> {
+        self.with_runtime_io(async { ClientOptions::new().open(&self.ipc_endpoint) })
+    }
+
+    #[cfg(windows)]
+    fn is_retryable_pipe_connect(&self, error: &io::Error) -> bool {
+        error.kind() == io::ErrorKind::NotFound
+            || error.raw_os_error() == Some(ERROR_PIPE_BUSY_OS_CODE)
+    }
+
+    #[cfg(windows)]
+    fn connect_stream(&self) -> io::Result<NamedPipeClient> {
+        for _ in 0..10 {
+            match self.try_connect_stream_once() {
+                Ok(stream) => return Ok(stream),
+                Err(error) if self.is_retryable_pipe_connect(&error) => {
+                    thread::sleep(Duration::from_millis(50));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+
+        self.try_connect_stream_once()
+    }
+
+    #[cfg(windows)]
+    async fn write_pipe_message(&self, client: &NamedPipeClient, message: &[u8]) -> io::Result<()> {
+        let mut written = 0;
+        while written < message.len() {
+            client.writable().await?;
+            match client.try_write(&message[written..]) {
+                Ok(0) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::WriteZero,
+                        "mpv IPC pipe closed while sending command",
+                    ));
+                }
+                Ok(count) => written += count,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    async fn read_pipe_response(&self, client: &NamedPipeClient) -> io::Result<serde_json::Value> {
+        let mut buffer = Vec::new();
+
+        loop {
+            client.readable().await?;
+
+            let mut chunk = [0u8; 1024];
+            match client.try_read(&mut chunk) {
+                Ok(0) if buffer.is_empty() => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "mpv IPC pipe closed without a response",
+                    ));
+                }
+                Ok(0) => break,
+                Ok(count) => {
+                    buffer.extend_from_slice(&chunk[..count]);
+                    if let Some(newline_index) = buffer.iter().position(|byte| *byte == b'\n') {
+                        buffer.truncate(newline_index);
+                        break;
+                    }
+                }
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => continue,
+                Err(error) => return Err(error),
+            }
+        }
+
+        let response = String::from_utf8_lossy(&buffer);
+        let parsed = serde_json::from_str(response.trim()).map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("invalid mpv IPC response: {error}"),
+            )
+        })?;
+        debug!(response = %response.trim(), "mpv IPC response");
+        Ok(parsed)
+    }
+
+    #[cfg(unix)]
     fn send_command(&self, cmd: &serde_json::Value) -> Option<serde_json::Value> {
-        debug!(cmd = %cmd, "mpv IPC command ignored on unsupported platform");
-        None
+        debug!(cmd = %cmd, "mpv IPC command");
+        let stream = match self.connect_stream() {
+            Ok(stream) => stream,
+            Err(error) => {
+                warn!(endpoint = %self.ipc_endpoint, error = %error, "mpv IPC connection failed");
+                return None;
+            }
+        };
+
+        stream
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .ok()?;
+
+        self.read_response(stream, cmd)
+    }
+
+    #[cfg(windows)]
+    fn send_command(&self, cmd: &serde_json::Value) -> Option<serde_json::Value> {
+        debug!(cmd = %cmd, "mpv IPC command");
+        let stream = match self.connect_stream() {
+            Ok(stream) => stream,
+            Err(error) => {
+                warn!(endpoint = %self.ipc_endpoint, error = %error, "mpv IPC pipe connection failed");
+                return None;
+            }
+        };
+
+        let message = format!("{cmd}\n");
+        self.with_runtime_io(async {
+            self.write_pipe_message(&stream, message.as_bytes()).await?;
+            self.read_pipe_response(&stream).await
+        })
+        .map_err(|error| {
+            warn!(endpoint = %self.ipc_endpoint, error = %error, "mpv IPC command failed");
+            error
+        })
+        .ok()
     }
 }
 

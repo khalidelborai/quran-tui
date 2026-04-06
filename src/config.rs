@@ -9,6 +9,20 @@ static ASYNC_HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 static BLOCKING_HTTP_CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
 static RUNTIME_SESSION_TAG: OnceLock<String> = OnceLock::new();
 
+fn runtime_session_tag() -> &'static str {
+    RUNTIME_SESSION_TAG.get_or_init(|| {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        format!("{}-{}", std::process::id(), timestamp)
+    })
+}
+
+fn runtime_resource_name(name: &str) -> String {
+    format!("quran-tui-{}-{}", runtime_session_tag(), name)
+}
+
 pub(crate) fn async_http_client() -> &'static reqwest::Client {
     ASYNC_HTTP_CLIENT.get_or_init(|| {
         reqwest::Client::builder()
@@ -37,14 +51,20 @@ pub(crate) fn runtime_dir() -> PathBuf {
 }
 
 pub(crate) fn runtime_path(name: &str) -> PathBuf {
-    let session_tag = RUNTIME_SESSION_TAG.get_or_init(|| {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        format!("{}-{}", std::process::id(), timestamp)
-    });
-    runtime_dir().join(format!("quran-tui-{}-{}", session_tag, name))
+    runtime_dir().join(runtime_resource_name(name))
+}
+
+#[cfg(unix)]
+pub(crate) fn mpv_ipc_endpoint() -> String {
+    runtime_dir()
+        .join(format!("{}.sock", runtime_resource_name("mpv")))
+        .display()
+        .to_string()
+}
+
+#[cfg(windows)]
+pub(crate) fn mpv_ipc_endpoint() -> String {
+    format!(r"\\.\pipe\{}", runtime_resource_name("mpv"))
 }
 
 pub(crate) fn data_dir() -> PathBuf {
@@ -81,4 +101,20 @@ pub(crate) fn is_allowed_remote_url(url: &str) -> bool {
     };
 
     host == "mp3quran.net" || host == "www.mp3quran.net" || host.ends_with(".mp3quran.net")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::runtime_resource_name;
+
+    #[test]
+    fn runtime_resource_name_uses_safe_characters() {
+        let value = runtime_resource_name("mpv");
+        assert!(value.starts_with("quran-tui-"));
+        assert!(
+            value
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+        );
+    }
 }
