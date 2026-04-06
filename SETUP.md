@@ -7,6 +7,12 @@
 - A terminal with solid Arabic shaping and font fallback
 - For Windows, prefer **WezTerm** for the most predictable Arabic font setup
 
+## Packaged release expectations
+
+- Linux packages and archives do **not** bundle `mpv` or fonts.
+- Current Linux `.deb` and `.rpm` artifacts are built on an **Ubuntu 22.04 / glibc 2.34** baseline.
+- The installed Linux command is `quran-tui`; it wraps the real payload binary and applies a UTF-8 locale fallback when needed.
+
 ## 1. Install Rust
 
 ### Linux / macOS
@@ -182,6 +188,34 @@ quran-tui
 
 The packaged launcher checks for `mpv` and retries with a UTF-8 locale when the current shell is using a legacy non-UTF-8 locale.
 
+### Linux package examples
+
+#### `.deb`
+
+```bash
+sudo dpkg -i quran-tui-v0.1.6-linux-amd64.deb
+```
+
+If `dpkg` reports missing dependencies, install them and retry:
+
+```bash
+sudo apt-get install -f
+```
+
+#### `.rpm`
+
+```bash
+sudo rpm -i quran-tui-v0.1.6-linux-x86_64.rpm
+```
+
+#### `.tar.gz`
+
+```bash
+tar -xzf quran-tui-v0.1.6-linux-x86_64.tar.gz
+cd quran-tui-v0.1.6-linux-x86_64
+./quran-tui
+```
+
 Useful checks:
 
 ```bash
@@ -204,6 +238,11 @@ cargo test
 - run `mpv --version`
 - confirm `mpv` is on `PATH`
 - start the app from the same shell where `mpv` works
+
+### `.deb` fails to install
+- check the system baseline with `ldd --version`
+- current `.deb` releases target **glibc 2.34+**
+- install `mpv` first, then retry `dpkg -i`
 
 ### Text is readable but not Mushaf-perfect
 That is expected in a TUI. This app renders terminal-native Arabic text, so exact Mushaf typography depends on terminal rendering and available fonts.
