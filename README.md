@@ -38,7 +38,7 @@ Practical advice:
 - Pull requests and pushes to `main` run GitHub Actions CI on Linux, macOS, and Windows.
 - Tags matching `v*` build release binaries and upload packaged assets to GitHub Releases.
 - Linux releases include `.tar.gz`, `.deb`, and `.rpm` assets.
-- Release archives include the binary, a helper launcher script, `README.md`, and `SETUP.md`.
+- Unix release archives include a `quran-tui` launcher, the `quran-tui-bin` payload, a compatibility `run-quran-tui.sh`, `README.md`, and `SETUP.md`.
 - Release archive names use normalized Rust host triples such as `linux-x86_64`, `macos-aarch64`, or `windows-x86_64`.
 - Runtime dependencies such as `mpv` and Arabic fonts are **not** bundled; install them separately.
 - Generated package-manager metadata for Homebrew, WinGet, Scoop, and Chocolatey is attached to tagged releases for downstream publishing.

@@ -46,6 +46,7 @@ def write_homebrew(version: str, repo: str, macos_tar: Path, output_dir: Path) -
 
           def install
             bin.install "quran-tui"
+            libexec.install "quran-tui-bin"
             doc.install "README.md", "SETUP.md"
           end
         end

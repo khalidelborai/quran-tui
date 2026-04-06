@@ -24,11 +24,13 @@ unicode-bidi = "0.3.18"
 [package.metadata.deb]
 maintainer = "quran-tui maintainers"
 depends = "$auto, mpv"
+recommends = "fonts-noto-core"
 section = "utils"
 priority = "optional"
 extended-description = "Terminal Quran player and study app with browse, playback, downloads, and study mode."
 assets = [
-  ["target/release/quran-tui", "usr/bin/quran-tui", "755"],
+  ["packaging/linux/quran-tui", "usr/bin/quran-tui", "755"],
+  ["target/release/quran-tui", "usr/lib/quran-tui/quran-tui-bin", "755"],
   ["README.md", "usr/share/doc/quran-tui/README.md", "644"],
   ["SETUP.md", "usr/share/doc/quran-tui/SETUP.md", "644"],
 ]
@@ -36,7 +38,8 @@ assets = [
 [package.metadata.generate-rpm]
 summary = "Terminal Quran player and study app"
 assets = [
-  { source = "target/release/quran-tui", dest = "/usr/bin/quran-tui", mode = "755" },
+  { source = "packaging/linux/quran-tui", dest = "/usr/bin/quran-tui", mode = "755" },
+  { source = "target/release/quran-tui", dest = "/usr/lib/quran-tui/quran-tui-bin", mode = "755" },
   { source = "README.md", dest = "/usr/share/doc/quran-tui/README.md", mode = "644" },
   { source = "SETUP.md", dest = "/usr/share/doc/quran-tui/SETUP.md", mode = "644" },
 ]

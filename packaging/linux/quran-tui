@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+find_binary() {
+  local candidate
+  for candidate in \
+    "${QURAN_TUI_BIN:-}" \
+    "$SCRIPT_DIR/quran-tui-bin" \
+    "$SCRIPT_DIR/../lib/quran-tui/quran-tui-bin" \
+    "$SCRIPT_DIR/../libexec/quran-tui-bin" \
+    "/usr/lib/quran-tui/quran-tui-bin"
+  do
+    if [[ -n "$candidate" && -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  echo "Error: quran-tui binary payload was not found." >&2
+  echo "See README.md or SETUP.md for packaging guidance." >&2
+  return 1
+}
+
+ensure_utf8_locale() {
+  if [[ "${QURAN_TUI_SKIP_UTF8_LOCALE_FALLBACK:-0}" == "1" ]]; then
+    return 1
+  fi
+
+  local charmap
+  charmap="$(locale charmap 2>/dev/null || printf 'unknown')"
+  case "$charmap" in
+    UTF-8|utf8) return 1 ;;
+  esac
+
+  local fallback
+  fallback="$(
+    locale -a 2>/dev/null | awk '
+      BEGIN { IGNORECASE = 1 }
+      $0 == "C.UTF-8" || $0 == "C.utf8" || $0 == "en_US.UTF-8" || $0 == "en_US.utf8" {
+        print
+        exit
+      }
+    '
+  )"
+
+  if [[ -n "$fallback" ]]; then
+    echo "Warning: non-UTF-8 locale detected ($charmap); retrying with $fallback for Arabic text rendering." >&2
+    export LC_ALL="$fallback"
+    export LANG="$fallback"
+  else
+    echo "Warning: non-UTF-8 locale detected ($charmap) and no UTF-8 fallback locale was found." >&2
+    echo "Arabic text may not render correctly. See SETUP.md for locale and font guidance." >&2
+  fi
+}
+
+if ! command -v mpv >/dev/null 2>&1; then
+  echo "Error: mpv is not installed or not on PATH." >&2
+  echo "See SETUP.md for installation instructions." >&2
+  exit 1
+fi
+
+ensure_utf8_locale || true
+exec "$(find_binary)" "$@"

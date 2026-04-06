@@ -174,6 +174,14 @@ cd quran-tui
 cargo run
 ```
 
+If you are using a packaged Linux release (`.tar.gz`, `.deb`, or `.rpm`), launch the wrapper command instead of the raw payload:
+
+```bash
+quran-tui
+```
+
+The packaged launcher checks for `mpv` and retries with a UTF-8 locale when the current shell is using a legacy non-UTF-8 locale.
+
 Useful checks:
 
 ```bash
@@ -188,6 +196,7 @@ cargo test
 - switch the terminal font to **Amiri** or **Noto Naskh Arabic**
 - enable font fallback
 - prefer WezTerm or another terminal with HarfBuzz-based shaping
+- verify `locale charmap` prints `UTF-8`
 - on Linux, verify the font is installed with `fc-list`
 - on Windows, restart the terminal after installing fonts
 
