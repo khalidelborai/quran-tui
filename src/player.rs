@@ -1,5 +1,4 @@
 use std::io::{self, BufRead, Write as IoWrite};
-use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::thread;
@@ -349,6 +348,7 @@ impl RealBackend {
         }
     }
 
+    #[cfg(unix)]
     fn start(&mut self) -> Result<(), String> {
         info!(socket = %self.socket_path, command = %self.command, "Starting mpv");
         let _ = std::fs::remove_file(&self.socket_path);
@@ -390,6 +390,17 @@ impl RealBackend {
         }
     }
 
+    #[cfg(not(unix))]
+    fn start(&mut self) -> Result<(), String> {
+        let message = format!(
+            "{} IPC control is currently supported only on Unix-like platforms",
+            self.command
+        );
+        warn!(error = %message, "mpv backend unsupported on this platform");
+        self.cleanup();
+        Err(message)
+    }
+
     fn is_available(&self) -> bool {
         self.process.is_some()
     }
@@ -402,7 +413,10 @@ impl RealBackend {
         let _ = std::fs::remove_file(&self.socket_path);
     }
 
+    #[cfg(unix)]
     fn send_command(&self, cmd: &serde_json::Value) -> Option<serde_json::Value> {
+        use std::os::unix::net::UnixStream;
+
         debug!(cmd = %cmd, "mpv IPC command");
         let mut stream = match UnixStream::connect(&self.socket_path) {
             Ok(stream) => stream,
@@ -426,6 +440,12 @@ impl RealBackend {
         let parsed: Option<serde_json::Value> = serde_json::from_str(&response).ok();
         debug!(response = %response.trim(), "mpv IPC response");
         parsed
+    }
+
+    #[cfg(not(unix))]
+    fn send_command(&self, cmd: &serde_json::Value) -> Option<serde_json::Value> {
+        debug!(cmd = %cmd, "mpv IPC command ignored on unsupported platform");
+        None
     }
 }
 
