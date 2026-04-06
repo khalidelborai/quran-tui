@@ -17,7 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - ubuntu-latest
+          - ubuntu-22.04
           - macos-latest
           - windows-latest
 
@@ -66,6 +66,12 @@ jobs:
       - name: Release build
         run: cargo build --release
 
+      - name: Validate Linux launcher wrapper
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x scripts/test-linux-launcher.sh
+          ./scripts/test-linux-launcher.sh
+
       - name: Install cargo-deb
         if: runner.os == 'Linux'
         run: cargo install cargo-deb --version 3.6.3 --locked
@@ -86,6 +92,7 @@ jobs:
           deb=$(find dist -maxdepth 1 -type f -name '*.deb' | head -n 1)
           test -n "$deb"
           dpkg-deb -c "$deb" | grep -E './usr/bin/quran-tui$'
+          dpkg-deb -c "$deb" | grep -E './usr/lib/quran-tui/quran-tui-bin$'
           dpkg-deb -f "$deb" Depends | grep -F 'mpv'
 
       - name: Package RPM release

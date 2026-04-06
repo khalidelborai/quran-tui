@@ -17,7 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - ubuntu-latest
+          - ubuntu-22.04
           - macos-latest
           - windows-latest
 
@@ -49,6 +49,12 @@ jobs:
       - name: Build release binary
         run: cargo build --release
 
+      - name: Validate Linux launcher wrapper
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x scripts/test-linux-launcher.sh
+          ./scripts/test-linux-launcher.sh
+
       - name: Package release (Unix)
         if: runner.os != 'Windows'
         env:
@@ -79,7 +85,7 @@ jobs:
         run: |
           archive=$(find dist -maxdepth 1 -type f -name '*.tar.gz' | head -n 1)
           test -n "$archive"
-          tar -tzf "$archive" | grep -E '/(quran-tui|run-quran-tui\.sh|README\.md|SETUP\.md)$'
+          tar -tzf "$archive" | grep -E '/(quran-tui|quran-tui-bin|run-quran-tui\.sh|README\.md|SETUP\.md)$'
 
       - name: Validate Debian package
         if: runner.os == 'Linux'
@@ -87,6 +93,7 @@ jobs:
           deb=$(find dist -maxdepth 1 -type f -name '*.deb' | head -n 1)
           test -n "$deb"
           dpkg-deb -c "$deb" | grep -E './usr/bin/quran-tui$'
+          dpkg-deb -c "$deb" | grep -E './usr/lib/quran-tui/quran-tui-bin$'
           dpkg-deb -f "$deb" Depends | grep -F 'mpv'
 
       - name: Package RPM release
