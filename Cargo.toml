@@ -6,6 +6,7 @@ description = "Terminal Quran player and study app"
 readme = "README.md"
 repository = "https://github.com/khalidelborai/quran-tui"
 homepage = "https://github.com/khalidelborai/quran-tui"
+license = "UNLICENSED"
 
 [dependencies]
 arabic_reshaper = "0.4.2"
@@ -31,3 +32,14 @@ assets = [
   ["README.md", "usr/share/doc/quran-tui/README.md", "644"],
   ["SETUP.md", "usr/share/doc/quran-tui/SETUP.md", "644"],
 ]
+
+[package.metadata.generate-rpm]
+summary = "Terminal Quran player and study app"
+assets = [
+  { source = "target/release/quran-tui", dest = "/usr/bin/quran-tui", mode = "755" },
+  { source = "README.md", dest = "/usr/share/doc/quran-tui/README.md", mode = "644" },
+  { source = "SETUP.md", dest = "/usr/share/doc/quran-tui/SETUP.md", mode = "644" },
+]
+
+[package.metadata.generate-rpm.requires]
+mpv = "*"

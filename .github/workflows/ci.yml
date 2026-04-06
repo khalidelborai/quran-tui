@@ -70,6 +70,10 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo install cargo-deb --version 3.6.3 --locked
 
+      - name: Install cargo-generate-rpm
+        if: runner.os == 'Linux'
+        run: cargo install cargo-generate-rpm --version 0.20.0 --locked
+
       - name: Package Debian release
         if: runner.os == 'Linux'
         run: |
@@ -83,3 +87,16 @@ jobs:
           test -n "$deb"
           dpkg-deb -c "$deb" | grep -E './usr/bin/quran-tui$'
           dpkg-deb -f "$deb" Depends | grep -F 'mpv'
+
+      - name: Package RPM release
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x scripts/package-rpm.sh
+          ./scripts/package-rpm.sh 0.1.0+ci
+
+      - name: Validate RPM package
+        if: runner.os == 'Linux'
+        run: |
+          rpm=$(find dist -maxdepth 1 -type f -name '*.rpm' | head -n 1)
+          test -n "$rpm"
+          file "$rpm" | grep -F 'RPM'
