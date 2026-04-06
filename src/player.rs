@@ -280,6 +280,34 @@ mod tests {
         player.set_stream_record(&path);
         assert_eq!(player.test_record_path(), Some(path));
     }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "requires mpv installed and on PATH"]
+    fn windows_pipe_smoke_test() {
+        let mut player = MpvPlayer::new();
+        player.start().expect("mpv should start on Windows CI");
+
+        let response = player
+            .send_command(&serde_json::json!({
+                "command": ["get_property", "pause"]
+            }))
+            .expect("mpv IPC should answer a property request");
+
+        assert_eq!(
+            response.get("error").and_then(|value| value.as_str()),
+            Some("success")
+        );
+        assert!(
+            response
+                .get("data")
+                .and_then(|value| value.as_bool())
+                .is_some(),
+            "pause property should be returned as a boolean"
+        );
+
+        player.stop();
+    }
 }
 
 #[cfg(test)]

@@ -32,10 +32,17 @@ jobs:
           rustc --version
 
       - name: Cache target directory
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: target
           key: ${{ runner.os }}-target-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install mpv (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install mpvio --yes --no-progress
+          mpv --version
 
       - name: Format check
         if: runner.os == 'Linux'
@@ -47,6 +54,10 @@ jobs:
 
       - name: Test
         run: cargo test
+
+      - name: Windows mpv smoke test
+        if: runner.os == 'Windows'
+        run: cargo test windows_pipe_smoke_test -- --ignored --exact --nocapture
 
       - name: Release build
         run: cargo build --release
