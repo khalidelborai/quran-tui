@@ -434,6 +434,7 @@ impl RealBackend {
     #[cfg(windows)]
     fn cleanup_endpoint(&self) {}
 
+    #[cfg(unix)]
     fn read_response<T>(&self, mut stream: T, cmd: &serde_json::Value) -> Option<serde_json::Value>
     where
         T: Read + IoWrite,
