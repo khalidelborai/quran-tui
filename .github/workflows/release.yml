@@ -66,7 +66,9 @@ jobs:
         if: runner.os == 'Linux'
         env:
           RELEASE_VERSION: ${{ steps.meta.outputs.version }}
-        run: ./scripts/package-deb.sh "$RELEASE_VERSION"
+        run: |
+          chmod +x scripts/package-deb.sh
+          ./scripts/package-deb.sh "$RELEASE_VERSION"
 
       - name: Validate package contents (Unix)
         if: runner.os != 'Windows'

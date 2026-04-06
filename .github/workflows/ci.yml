@@ -72,7 +72,9 @@ jobs:
 
       - name: Package Debian release
         if: runner.os == 'Linux'
-        run: ./scripts/package-deb.sh 0.1.0+ci
+        run: |
+          chmod +x scripts/package-deb.sh
+          ./scripts/package-deb.sh 0.1.0+ci
 
       - name: Validate Debian package
         if: runner.os == 'Linux'
