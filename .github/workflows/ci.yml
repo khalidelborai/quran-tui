@@ -42,7 +42,11 @@ jobs:
         shell: pwsh
         run: |
           choco install mpvio --yes --no-progress
-          mpv --version
+          $mpv = Get-ChildItem 'C:\ProgramData\chocolatey\lib' -Filter mpv.exe -Recurse | Select-Object -First 1
+          if (-not $mpv) { throw 'mpv.exe not found after Chocolatey install' }
+          $mpvDir = Split-Path $mpv.FullName -Parent
+          Add-Content -Path $env:GITHUB_PATH -Value $mpvDir
+          & $mpv.FullName --version
 
       - name: Format check
         if: runner.os == 'Linux'
